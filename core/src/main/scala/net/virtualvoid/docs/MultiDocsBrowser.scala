@@ -1,6 +1,6 @@
 package net.virtualvoid.docs
 
-import akka.actor.Actor
+import akka.actor.{ ActorSystem, Props, Actor }
 import spray.routing.HttpService
 import spray.util.SprayActorLogging
 import spray.httpx.SprayJsonSupport
@@ -11,6 +11,19 @@ import java.io.InputStream
 import scala.util.matching.Regex.Match
 import spray.httpx.marshalling.{ BasicMarshallers, Marshaller }
 import spray.routing.directives.ContentTypeResolver
+import akka.io.IO
+import spray.can.Http
+
+object MultiDocsBrowser {
+  def run(scalaDocJars: Seq[String])(implicit system: ActorSystem): Unit = {
+    val docs = MultiScalaDocsRepo(scalaDocJars.map(ScalaDocs.load))
+    system.log.info(s"Loaded ${docs.docs.size} scaladocs")
+
+    val service = system.actorOf(Props(classOf[MultiDocsBrowser], docs))
+
+    IO(Http) ! Http.Bind(service, "localhost", 35891)
+  }
+}
 
 class MultiDocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with SprayActorLogging with SprayJsonSupport {
   def actorRefFactory = context

@@ -20,11 +20,6 @@ import scala.util.matching.Regex.Match
 object Main extends App {
   implicit val system = ActorSystem()
 
-  val docs = MultiScalaDocsRepo(args.toSeq.map(ScalaDocs.load))
-  system.log.info(s"Loaded ${docs.docs.size} scaladocs")
-
-  val service = system.actorOf(Props(classOf[MultiDocsBrowser], docs))
-
-  IO(Http) ! Http.Bind(service, "localhost", 35891)
+  MultiDocsBrowser.run(args.toSeq)
 }
 
