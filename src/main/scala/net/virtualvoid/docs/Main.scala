@@ -43,12 +43,15 @@ class DocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with 
     import spray.json._
     ScalaDocs.INDEX_PRELUDE + docs.mergedPackages.toJson.toString + ScalaDocs.INDEX_SUFFIX
   }
-
+  import MyPathMatcher._
   def receive = runRoute {
     get {
       path("") {
-        complete("hello world")
+        redirect(Uri("/index"), StatusCodes.Found)
       } ~
+        path("index") {
+          completeWithStream("index.html", docs.resourceModule.resourceForPath("index.html"))
+        } ~
         path("docs" / "byType" / Segment) { tpe ⇒
           docs.moduleForType(tpe) match {
             case Some(m) ⇒ redirect(Uri(s"/docs/${m.module}/index.html#$tpe"), StatusCodes.Found)
@@ -58,34 +61,18 @@ class DocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with 
         pathPrefix("docs" / Segment) { module ⇒
           val m = docs.moduleForName(module).get
 
-          path(Rest) { path ⇒
-            implicit val bufferMarshaller = BasicMarshallers.byteArrayMarshaller(ContentTypeResolver.Default(path))
-
-            val fileData = m.resourceForPath(path).map(FileUtils.readAllBytes)
-            val data =
-              if (path == "lib/template.js")
-                fileData.map(_ ++ templateExtraData)
-              else fileData
-
-            complete(data)
-          }
-        } ~
-        pathPrefix("merged") {
-          import MyPathMatcher._
-          path("index.js") {
-            complete(mergedIndexJs)
+          path(Rest.filter(_.endsWith(".html"))) { path ⇒
+            completeWithLinksReplacedStream(m.resourceForPath(path))
           } ~
-            path(("trait".lit | "caseClass".lit | "class".lit | "object".lit) / Segment) { (kind, tpe) ⇒
-              val stream = docs.streamForType(kind, tpe)
-
-              completeWithLinksReplacedStream(stream)
-            } ~
-            path(Rest.filter(_.endsWith("/package.html"))) { path ⇒
-              completeWithLinksReplacedStream(docs.packageObjectStream(path))
-            } ~
             path(Rest) { path ⇒
-              completeWithStream(path, docs.resourceModule.resourceForPath(path))
+              completeWithStream(path, m.resourceForPath(path))
             }
+        } ~
+        path("index.js") {
+          complete(mergedIndexJs)
+        } ~
+        path(Rest.filter(_.endsWith("/package.html"))) { path ⇒
+          completeWithLinksReplacedStream(docs.packageObjectStream(path))
         } ~
         path(Rest) { path ⇒
           completeWithStream(path, docs.resourceModule.resourceForPath(path))
@@ -93,19 +80,19 @@ class DocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with 
     }
   }
   def completeWithLinksReplacedStream(stream: Option[InputStream]) = {
-    val tpeLink = """<a href="([^"]*)" class="extype" name="([^"]*)">([^<]*)</a>""".r
+    val tpeLink = """<a href="([^"#]*)(#[^"]*)?" class="(extype|extmbr)" name="([^"]*)">([^<]*)</a>""".r
     val span = """<span class="extype" name="([^"]*)">([^<]*)</span>""".r
 
     def replaceLinks(stream: InputStream) = {
       val withLinksReplaced = tpeLink.replaceAllIn(FileUtils.readAllText(stream), replacer = { (m: Match) ⇒
         val path = m.group(1)
-        val tpe = m.group(2)
-        val contents = m.group(3)
+        val tpe = m.group(4)
 
         docs.moduleForType(tpe) match {
           case Some(mod) ⇒
             val kind = mod.kindForPath(tpe, path)
-            s"""<a href="/merged/${kind}/$$2" class="extype" name="$$2">$$3</a>"""
+            val newPath = docs.pathFor(mod.module, mod.entry(tpe).get, kind).get.replaceAll("\\$", "\\\\\\$")
+            s"""<a href="${newPath}$$2" class="$$3" name="$$4">$$5</a>"""
           case None ⇒ m.group(0).replaceAll("\\$", "\\\\\\$")
         }
       })
@@ -115,7 +102,8 @@ class DocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with 
         docs.moduleForType(tpe) match {
           case Some(mod) ⇒
             val kind = mod.kindForEntry(tpe)
-            s"""<a href="/merged/${kind}/$$1" class="extype" name="$$1">$$2</a>"""
+            val path = docs.pathFor(mod.module, mod.entry(tpe).get, kind).get.replaceAll("\\$", "\\\\\\$")
+            s"""<a href="${path}" class="extype" name="$$1">$$2</a>"""
           case None ⇒ m.group(0).replaceAll("\\$", "\\\\\\$")
         }
       })
@@ -162,6 +150,7 @@ case class ScalaEntry(name: String,
     case "trait"     ⇒ traitPath
     case "object"    ⇒ objectPath
   }
+  def namePath: String = name.replaceAll("\\.", "/")
 }
 
 trait ScalaDocs {
@@ -194,10 +183,14 @@ case class MultiScalaDocsRepo(docs: Seq[ScalaDocs]) {
     val pkg = packagePath.replaceAll("/", ".")
     docs.find(_.packages.contains(pkg)).flatMap(_.resourceForPath(path))
   }
+  def moduleForPackage(pkg: String): Option[ScalaDocs] = docs.find(_.packages.contains(pkg))
+
+  def pathFor(module: String, entry: ScalaEntry, kind: String) =
+    entry.pathForKind(kind).map(p ⇒ s"/docs/$module/$p")
 
   def mergedPackages: Map[String, Seq[ScalaEntry]] = {
-    def rewritePaths(entry: ScalaEntry): ScalaEntry = {
-      def path(kind: String): Option[String] = entry.pathForKind(kind).map(_ ⇒ s"$kind/${entry.name}")
+    def rewritePaths(module: String)(entry: ScalaEntry): ScalaEntry = {
+      def path(kind: String): Option[String] = pathFor(module, entry, kind)
       entry.copy(
         caseClassPath = path("caseClass"),
         classPath = path("class"),
@@ -206,7 +199,7 @@ case class MultiScalaDocsRepo(docs: Seq[ScalaDocs]) {
     }
 
     docs.flatMap(_.packages).groupBy(_._1).map {
-      case (pkg, entries) ⇒ (pkg, entries.flatMap(_._2).map(rewritePaths))
+      case (pkg, entries) ⇒ (pkg, entries.flatMap(_._2).map(rewritePaths(moduleForPackage(pkg).get.module)))
     }.toMap
   }
   def streamForType(kind: String, tpe: String): Option[InputStream] =
