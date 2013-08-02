@@ -3,6 +3,7 @@ A webserver that integrates scaladoc from different jars.
 Instructions
 ------------
 
+ * Clone: `git clone https://github.com/jrudolph/multi-scaladoc-browser.git`
  * Assemble: `sbt assembly`
  * Run: `java -jar core/target/scala-2.10/multidoc-core-assembly-0.1.0.jar <scaladoc-descriptor>*` where each
    `<scaladoc-descriptor>` is of the form `<module-name>:<path to scaladoc.jar>`. E.g.
