@@ -27,10 +27,6 @@ object MultiDocsBrowser {
 
 class MultiDocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with SprayActorLogging with SprayJsonSupport {
   def actorRefFactory = context
-  val templateExtraData = {
-    val cl = spray.util.actorSystem(context).dynamicAccess.classLoader
-    FileUtils.readAllBytes(cl.getResourceAsStream("extra-template.js"))
-  }
   val mergedIndexJs = {
     import spray.json._
     import DefaultJsonProtocol._
