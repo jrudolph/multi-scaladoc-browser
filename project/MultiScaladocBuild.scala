@@ -28,8 +28,10 @@ object MultiScaladocBuild extends Build {
         scalaVersion in ThisBuild := "2.10.2"
       )
       .settings(
-        resolvers += "nightly spray" at "http://nightlies.spray.io/",
-
+        resolvers ++= Seq(
+          "nightly spray" at "http://nightlies.spray.io/",
+          "spray"         at "http://repo.spray.io/"
+        ),
         libraryDependencies ++= {
           val akkaV = "2.2.0"
           val sprayV = "1.2-20130801"
