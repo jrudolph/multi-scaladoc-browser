@@ -55,8 +55,8 @@ object MultiScaladocBuild extends Build {
         )
       )
 
-  def basicSettings = ScalariformSupport.formatSettings ++
-    seq(
+  def basicSettings =
+    Seq(
       organization := "net.virtual-void",
       version := "0.1.0"
     )
