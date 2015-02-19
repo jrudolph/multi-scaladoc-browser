@@ -1,8 +1,7 @@
 package net.virtualvoid.docs
 
-import akka.actor.{ ActorSystem, Props, Actor }
+import akka.actor.{ ActorSystem, Props, Actor, ActorLogging }
 import spray.routing.HttpService
-import spray.util.SprayActorLogging
 import spray.httpx.SprayJsonSupport
 import org.parboiled.common.FileUtils
 import spray.http.{ MediaTypes, StatusCodes, Uri }
@@ -25,7 +24,7 @@ object MultiDocsBrowser {
   }
 }
 
-class MultiDocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with SprayActorLogging with SprayJsonSupport {
+class MultiDocsBrowser(docs: MultiScalaDocsRepo) extends Actor with HttpService with ActorLogging with SprayJsonSupport {
   def actorRefFactory = context
   val mergedIndexJs = {
     import spray.json._
